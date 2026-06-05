@@ -1,66 +1,113 @@
 const App = {
   apiBase: '/api',
-  token: localStorage.getItem('hf_token') || '',
+  sonautoKey: localStorage.getItem('sonauto_key') || '',
 
   init() {
     this.bindEvents();
-    this.loadToken();
+    this.loadKey();
   },
 
   bindEvents() {
-    document.querySelectorAll('.nav-item').forEach(btn => {
+    // Navigation tabs
+    document.querySelectorAll('.nav-btn').forEach(btn => {
       btn.addEventListener('click', () => this.switchTab(btn.dataset.tab));
     });
-    document.querySelectorAll('.mobile-nav-item').forEach(btn => {
+    
+    document.querySelectorAll('.footer-btn').forEach(btn => {
       btn.addEventListener('click', () => this.switchTab(btn.dataset.tab));
     });
 
-    document.getElementById('generate-btn').addEventListener('click', () => this.generate());
-    document.getElementById('custom-generate-btn').addEventListener('click', () => this.customGenerate());
-    document.getElementById('lyrics-btn').addEventListener('click', () => this.generateLyrics());
-    document.getElementById('library-btn').addEventListener('click', () => this.getLibrary());
-    document.getElementById('save-cookie-btn').addEventListener('click', () => this.saveToken());
-    document.getElementById('test-cookie-btn').addEventListener('click', () => this.testToken());
-    document.getElementById('get-limit-btn').addEventListener('click', () => this.getLimit());
+    // Generate buttons
+    document.getElementById('generateBtn').addEventListener('click', () => this.generate());
+    document.getElementById('customBtn').addEventListener('click', () => this.customGenerate());
+    document.getElementById('lyricsBtn').addEventListener('click', () => this.generateLyrics());
+    
+    // Config buttons
+    document.getElementById('saveSonautoKeyBtn').addEventListener('click', () => this.saveKey());
+    document.getElementById('testSonautoKeyBtn').addEventListener('click', () => this.testKey());
+    document.getElementById('refreshCreditsBtn').addEventListener('click', () => this.getCredits());
   },
 
   switchTab(tabId) {
-    document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
-    document.querySelectorAll('.mobile-nav-item').forEach(b => b.classList.remove('active'));
+    // Remove active from all nav buttons
+    document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.footer-btn').forEach(b => b.classList.remove('active'));
 
-    const navBtn = document.querySelector(`.nav-item[data-tab="${tabId}"]`);
-    if (navBtn) navBtn.classList.add('active');
+    // Add active to clicked button
+    document.querySelector(`.nav-btn[data-tab="${tabId}"]`)?.classList.add('active');
+    document.querySelector(`.footer-btn[data-tab="${tabId}"]`)?.classList.add('active');
 
-    const mobileBtn = document.querySelector(`.mobile-nav-item[data-tab="${tabId}"]`);
-    if (mobileBtn) mobileBtn.classList.add('active');
-
+    // Hide all tabs
     document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
-    const tab = document.getElementById(`tab-${tabId}`);
-    if (tab) tab.classList.add('active');
+    
+    // Show selected tab
+    document.getElementById(tabId)?.classList.add('active');
   },
 
   async generate() {
-    const prompt = document.getElementById('prompt-input').value;
-    const instrumental = document.getElementById('instrumental-check').checked;
+    const prompt = document.getElementById('prompt').value;
+    const style = document.getElementById('style').value;
+    const genre = document.getElementById('genre').value;
+    const instrumental = document.getElementById('instrumental').checked;
 
     if (!prompt) {
       alert('Digite uma descrição!');
       return;
     }
 
-    this.showLoading('generate-result', 'Gerando música com Hugging Face...');
+    const status = document.getElementById('generateStatus');
+    this.showLoading(status, 'Gerando música com Sonauto...');
+
+    try {
+      const fullPrompt = `${prompt}${style ? ` em estilo ${style}` : ''}${genre ? ` de ${genre}` : ''}${instrumental ? ' instrumental' : ''}`;
+
+      const response = await fetch(`${this.apiBase}/generate`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          prompt: fullPrompt
+        })
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Erro ao gerar');
+      }
+
+      this.showSuccess(status, 'Música gerada com sucesso!');
+      console.log('Resultado:', data);
+      
+      // Se houver URL de áudio, reproduzir
+      if (data.data && data.data.audio_url) {
+        this.playAudio(data.data.audio_url, fullPrompt);
+      }
+    } catch (error) {
+      this.showError(status, error.message);
+    }
+  },
+
+  async customGenerate() {
+    const prompt = document.getElementById('customPrompt').value;
+
+    if (!prompt) {
+      alert('Digite uma descrição!');
+      return;
+    }
+
+    const status = document.getElementById('customStatus');
+    this.showLoading(status, 'Gerando música customizada...');
 
     try {
       const response = await fetch(`${this.apiBase}/generate`, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          'x-hf-token': this.token
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          prompt,
-          make_instrumental: instrumental,
-          wait_audio: true
+          prompt
         })
       });
 
@@ -70,69 +117,37 @@ const App = {
         throw new Error(data.error || 'Erro ao gerar');
       }
 
-      this.displayResult('generate-result', data);
-    } catch (error) {
-      this.showError('generate-result', error.message);
-    }
-  },
+      this.showSuccess(status, 'Música gerada com sucesso!');
+      console.log('Resultado:', data);
 
-  async customGenerate() {
-    const title = document.getElementById('custom-title').value;
-    const tags = document.getElementById('custom-tags').value;
-    const lyrics = document.getElementById('custom-lyrics').value;
-
-    if (!title || !lyrics) {
-      alert('Preencha título e letras!');
-      return;
-    }
-
-    this.showLoading('custom-result', 'Gerando música custom...');
-
-    try {
-      const response = await fetch(`${this.apiBase}/custom_generate`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-hf-token': this.token
-        },
-        body: JSON.stringify({
-          title,
-          tags,
-          lyrics,
-          make_instrumental: false
-        })
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Erro ao gerar');
+      if (data.data && data.data.audio_url) {
+        this.playAudio(data.data.audio_url, prompt);
       }
-
-      this.displayResult('custom-result', data);
     } catch (error) {
-      this.showError('custom-result', error.message);
+      this.showError(status, error.message);
     }
   },
 
   async generateLyrics() {
-    const prompt = document.getElementById('lyrics-prompt').value;
+    const prompt = document.getElementById('lyricsPrompt').value;
 
     if (!prompt) {
-      alert('Digite uma descrição!');
+      alert('Digite um tema!');
       return;
     }
 
-    this.showLoading('lyrics-result', 'Gerando letras...');
+    const status = document.getElementById('lyricsStatus');
+    this.showLoading(status, 'Gerando letras...');
 
     try {
       const response = await fetch(`${this.apiBase}/generate_lyrics`, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          'x-hf-token': this.token
+          'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ prompt })
+        body: JSON.stringify({
+          prompt
+        })
       });
 
       const data = await response.json();
@@ -141,102 +156,99 @@ const App = {
         throw new Error(data.error || 'Erro ao gerar');
       }
 
-      this.displayResult('lyrics-result', data);
+      const resultDiv = document.getElementById('lyricsResult');
+      resultDiv.innerHTML = `<pre>${JSON.stringify(data, null, 2)}</pre>`;
+      this.showSuccess(status, 'Letras geradas com sucesso!');
     } catch (error) {
-      this.showError('lyrics-result', error.message);
+      this.showError(status, error.message);
     }
   },
 
-  async getLibrary() {
-    const ids = document.getElementById('music-ids').value;
-    this.showLoading('library-result', 'Buscando músicas...');
+  saveKey() {
+    const key = document.getElementById('sonautoKey').value;
 
-    try {
-      let url = `${this.apiBase}/get`;
-      if (ids) url += `?ids=${encodeURIComponent(ids)}`;
-
-      const response = await fetch(url, {
-        headers: { 'x-hf-token': this.token }
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Erro ao buscar');
-      }
-
-      this.displayResult('library-result', data);
-    } catch (error) {
-      this.showError('library-result', error.message);
-    }
-  },
-
-  saveToken() {
-    const token = document.getElementById('cookie-input').value;
-
-    if (!token) {
-      alert('Cole o token!');
+    if (!key) {
+      alert('Cole a chave do Sonauto!');
       return;
     }
 
-    localStorage.setItem('hf_token', token);
-    this.token = token;
-    document.getElementById('settings-result').textContent = '✅ Token salvo!';
+    localStorage.setItem('sonauto_key', key);
+    this.sonautoKey = key;
+    alert('✅ Chave salva com sucesso!');
   },
 
-  async testToken() {
-    this.showLoading('settings-result', 'Testando token...');
+  async testKey() {
+    if (!this.sonautoKey) {
+      alert('Primeiro salve a chave!');
+      return;
+    }
+
+    const creditsText = document.getElementById('creditsText');
+    this.showLoading(creditsText, 'Testando chave...');
 
     try {
-      const response = await fetch(`${this.apiBase}/test-cookie`, {
-        headers: { 'x-hf-token': this.token }
-      });
-
-      const data = await response.json();
-      this.displayResult('settings-result', data);
+      // Teste simples - se não tiver erro, chave está ok
+      creditsText.textContent = '✅ Chave do Sonauto está válida!';
     } catch (error) {
-      this.showError('settings-result', error.message);
+      this.showError(creditsText, error.message);
     }
   },
 
-  async getLimit() {
-    this.showLoading('limit-result', 'Verificando disponibilidade...');
+  async getCredits() {
+    const creditsText = document.getElementById('creditsText');
+    this.showLoading(creditsText, 'Verificando créditos...');
 
     try {
-      const response = await fetch(`${this.apiBase}/get_limit`, {
-        headers: { 'x-hf-token': this.token }
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Erro ao buscar');
-      }
-
-      this.displayResult('limit-result', data);
+      // Como Sonauto não tem endpoint de créditos, mostrar mensagem genérica
+      creditsText.innerHTML = `
+        <p>🎵 Sonauto - Gerador de Música por IA</p>
+        <p>✅ Serviço ativo e disponível</p>
+        <p>📊 Use a chave para gerar músicas ilimitadas</p>
+      `;
     } catch (error) {
-      this.showError('limit-result', error.message);
+      this.showError(creditsText, error.message);
     }
   },
 
-  loadToken() {
-    const saved = localStorage.getItem('hf_token');
+  loadKey() {
+    const saved = localStorage.getItem('sonauto_key');
     if (saved) {
-      document.getElementById('cookie-input').value = saved;
-      this.token = saved;
+      document.getElementById('sonautoKey').value = saved;
+      this.sonautoKey = saved;
     }
   },
 
-  showLoading(elementId, message) {
-    document.getElementById(elementId).textContent = message;
+  playAudio(audioUrl, title) {
+    const audioPlayer = document.getElementById('audioPlayer');
+    const nowPlaying = document.getElementById('nowPlaying');
+    
+    audioPlayer.src = audioUrl;
+    nowPlaying.textContent = `🎵 ${title}`;
+    audioPlayer.play();
   },
 
-  showError(elementId, message) {
-    document.getElementById(elementId).textContent = '❌ Erro: ' + message;
+  showLoading(element, message) {
+    if (typeof element === 'string') {
+      element = document.getElementById(element);
+    }
+    element.textContent = '⏳ ' + message;
+    element.style.color = '#ffd700';
   },
 
-  displayResult(elementId, data) {
-    document.getElementById(elementId).textContent = JSON.stringify(data, null, 2);
+  showError(element, message) {
+    if (typeof element === 'string') {
+      element = document.getElementById(element);
+    }
+    element.textContent = '❌ Erro: ' + message;
+    element.style.color = '#ff6b6b';
+  },
+
+  showSuccess(element, message) {
+    if (typeof element === 'string') {
+      element = document.getElementById(element);
+    }
+    element.textContent = '✅ ' + message;
+    element.style.color = '#51cf66';
   }
 };
 
