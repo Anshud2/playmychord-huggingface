@@ -1,4 +1,5 @@
-const { handleCors, hfFetch } = require('./_utils');
+const axios = require('axios');
+const { handleCors } = require('./_utils');
 
 module.exports = async (req, res) => {
   if (handleCors(req, res)) return;
@@ -10,18 +11,22 @@ module.exports = async (req, res) => {
       return res.status(400).json({ error: 'Prompt é obrigatório' });
     }
 
-    const data = await hfFetch(req, 'facebook/musicgen-medium', {
-      method: 'POST',
-      body: {
-        inputs: prompt,
-      },
-    });
+    const response = await axios.post(
+      'https://api.sonauto.ai/v1/generations/v3',
+      { prompt },
+      {
+        headers: {
+          'Authorization': `Bearer ${process.env.SONAUTO_API_KEY}`,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
 
     res.json({
       success: true,
       prompt: prompt,
       message: 'Música gerada com sucesso!',
-      data: data,
+      data: response.data,
     });
   } catch (err) {
     console.error('[generate]', err.message);
